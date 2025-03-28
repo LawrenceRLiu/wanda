@@ -1,0 +1,5 @@
+/data/lliu/wanda/scripts/llama_3_8b.sh: 1: !/bin/bash: not found
+Running with wanda pruning method
+Finished wanda pruning method
+Running with sparsegpt pruning method
+Finished sparsegpt pruning method

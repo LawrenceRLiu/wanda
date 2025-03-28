@@ -87,7 +87,7 @@ def zero_shot(base_model, model,
               num_fewshot:int = 0):
     from transformers import AutoTokenizer
     from .lm_eval_adaptor import LMEvalAdaptor
-    from lm_eval import evaluator, tasks
+    from lm_eval import evaluator
     
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     tokenizer.pad_token = tokenizer.eos_token

@@ -66,7 +66,7 @@ def prepare_calibration_input(model, dataloader, device):
         device = model.hf_device_map["model.embed_tokens"]
 
     dtype = next(iter(model.parameters())).dtype
-    inps = torch.zeros((128, model.seqlen, model.config.hidden_size), dtype=dtype, device=device)
+    inps = torch.zeros((128, model.seqlen, model.config.hidden_size), dtype=dtype, device="cpu")
     inps.requires_grad = False
     cache = {'i': 0, 'attention_mask': None, "position_ids": None, 
              "position_embeddings": None}
@@ -76,7 +76,7 @@ def prepare_calibration_input(model, dataloader, device):
             super().__init__()
             self.module = module
         def forward(self, inp, **kwargs):
-            inps[cache['i']] = inp
+            inps[cache['i']] = inp.cpu()
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
             cache['position_ids'] = kwargs['position_ids']
@@ -94,13 +94,13 @@ def prepare_calibration_input(model, dataloader, device):
             pass 
     layers[0] = layers[0].module
 
-    outs = torch.zeros_like(inps)
+    # outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
     position_ids = cache['position_ids']
     position_embeddings = cache['position_embeddings']
     model.config.use_cache = use_cache
 
-    return inps, outs, attention_mask, position_ids, position_embeddings
+    return inps, None, attention_mask, position_ids, position_embeddings
 
 def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
     thres_cumsum = sum_before * alpha 
@@ -110,6 +110,19 @@ def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
     cur_sparsity = (W_mask==True).sum() / W_mask.numel()
     return W_mask, cur_sparsity
 
+def get_gpu_memory(device:torch.device, return_str:bool=False):
+    total_memory = torch.cuda.get_device_properties(device).total_memory
+    reserved_memory = torch.cuda.memory_reserved(device)
+    allocated_memory = torch.cuda.memory_allocated(device)
+    free_memory = total_memory - reserved_memory - allocated_memory
+
+    as_gb = lambda x: round(x/1024**3, 2)
+    if return_str:
+        return f"Total Memory: {as_gb(total_memory)}GB, Reserved Memory: {as_gb(reserved_memory)}GB, Allocated Memory: {as_gb(allocated_memory)}GB, Free Memory: {as_gb(free_memory)}GB"
+    else:
+        print(f"Total Memory: {as_gb(total_memory)}GB, Reserved Memory: {as_gb(reserved_memory)}GB, Allocated Memory: {as_gb(allocated_memory)}GB, Free Memory: {as_gb(free_memory)}GB")
+        
+    
 def prune_magnitude(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0, prune_m=0):
     layers = model.model.layers 
 
@@ -141,17 +154,19 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
                             train_test="train")
     print("dataset loading complete")
     with torch.no_grad():
-        inps, outs, attention_mask, position_ids, position_embeddings_ = prepare_calibration_input(model, dataloader, device)
+        inps, _, attention_mask, position_ids, position_embeddings_ = prepare_calibration_input(model, dataloader, device)
 
     layers = model.model.layers
     for i in tqdm.tqdm(range(len(layers))):
+
         layer = layers[i]
         subset = find_layers(layer)
 
         if f"model.layers.{i}" in model.hf_device_map:   ## handle the case for llama-30B and llama-65B, when the device map has multiple GPUs;
             dev = model.hf_device_map[f"model.layers.{i}"]
-            inps = inps.to(dev)
-            outs = outs.to(dev)
+            get_gpu_memory(dev)
+            # inps = inps.to(dev)
+            # outs = outs.to(dev)
             if isinstance(attention_mask, torch.Tensor):
                 attention_mask = attention_mask.to(dev)
             if isinstance(position_ids, torch.Tensor):
@@ -178,7 +193,7 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
             handles.append(subset[name].register_forward_hook(add_batch(name)))
         for j in range(args.nsamples):
             with torch.no_grad():
-                outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids,
+                _ = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask, position_ids=position_ids,
                                 position_embeddings=position_embeddings)[0]
         for h in handles:
             h.remove()
@@ -225,10 +240,11 @@ def prune_wanda(args, model, tokenizer, device=torch.device("cuda:0"), prune_n=0
 
         for j in range(args.nsamples):
             with torch.no_grad():
-                outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids,
-                                position_embeddings=position_embeddings)[0]
-        inps, outs = outs, inps
-
+                inps[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask, position_ids=position_ids,
+                                position_embeddings=position_embeddings)[0].cpu()
+        torch.cuda.empty_cache()
+        get_gpu_memory(dev)
+        
     model.config.use_cache = use_cache 
     torch.cuda.empty_cache()
 
@@ -250,7 +266,7 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros(
-        (args.nsamples, model.seqlen, model.config.hidden_size), dtype=dtype, device=dev
+        (args.nsamples, model.seqlen, model.config.hidden_size), dtype=dtype, device="cpu"
     )
     cache = {'i': 0, 'attention_mask': None, "position_ids": None, "position_embeddings": None}
 
@@ -259,7 +275,7 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
             super().__init__()
             self.module = module
         def forward(self, inp, **kwargs):
-            inps[cache['i']] = inp
+            inps[cache['i']] = inp.cpu()
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
             cache['position_ids'] = kwargs['position_ids']
@@ -274,7 +290,7 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
     layers[0] = layers[0].module
     torch.cuda.empty_cache()
 
-    outs = torch.zeros_like(inps)
+    # outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
     position_ids = cache['position_ids']
     position_embeddings = cache['position_embeddings']
@@ -286,8 +302,8 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
         if f"model.layers.{i}" in model.hf_device_map:
             dev = model.hf_device_map[f"model.layers.{i}"]
             print(f"layer {i} device {dev}")
-            inps = inps.to(dev)
-            outs = outs.to(dev)
+            # inps = inps.to(dev)
+            # outs = outs.to(dev)
             if isinstance(attention_mask, torch.Tensor):
                 attention_mask = attention_mask.to(dev)
             if isinstance(position_ids, torch.Tensor):
@@ -311,7 +327,7 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
             handles.append(subset[name].register_forward_hook(add_batch(name)))
 
         for j in range(args.nsamples):
-            outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids, position_embeddings = position_embeddings)[0]
+            _ = layer(inps[j].to(dev).unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids, position_embeddings = position_embeddings)[0]
         for h in handles:
             h.remove()
 
@@ -323,12 +339,13 @@ def prune_sparsegpt(args, model, tokenizer, dev, prune_n=0, prune_m=0):
             gpts[name].free()
 
         for j in range(args.nsamples):
-            outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids, position_embeddings = position_embeddings)[0]
+            inps[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask, position_ids=position_ids, position_embeddings = position_embeddings)[0].cpu()
 
         layers[i] = layer 
         torch.cuda.empty_cache()
-
-        inps, outs = outs, inps
+        
+        #print the amount of used and free memory
+        print(torch.cuda.memory_summary(device=None, abbreviated=False))
 
     model.config.use_cache = use_cache
     torch.cuda.empty_cache()

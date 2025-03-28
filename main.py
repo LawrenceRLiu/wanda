@@ -10,6 +10,7 @@ from importlib.metadata import version
 from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers
 from lib.eval import eval_ppl, zero_shot
 
+print("pid: ", os.getpid())
 print('torch', version('torch'))
 print('transformers', version('transformers'))
 print('accelerate', version('accelerate'))
@@ -21,7 +22,7 @@ def get_llm(model_name, cache_dir="llm_weights"):
         torch_dtype=torch.float16, 
         cache_dir=cache_dir, 
         low_cpu_mem_usage=True, 
-        device_map="auto"
+        device_map="balanced"
     )
 
     model.seqlen = model.config.max_position_embeddings 
@@ -61,52 +62,52 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
 
     device = torch.device("cuda:0")
-    if "30b" in args.model or "65b" in args.model: # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
-        device = model.hf_device_map["lm_head"]
+    # if "30b" in args.model or "70b" in args.model.lower(): # for 30b and 65b we use device_map to load onto multiple A6000 GPUs, thus the processing here.
+    #     device = model.hf_device_map["lm_head"]
     print("use device ", device)
 
+    with torch.no_grad():
+        if args.sparsity_ratio > 0:
+            # Handling n:m sparsity
+            prune_n, prune_m = 0, 0
+            if args.sparsity_type != "unstructured":
+                assert args.sparsity_ratio == 0.5, "sparsity ratio must be 0.5 for structured N:M sparsity"
+                prune_n, prune_m = map(int, args.sparsity_type.split(":"))
 
-    if args.sparsity_ratio > 0:
-        # Handling n:m sparsity
-        prune_n, prune_m = 0, 0
-        if args.sparsity_type != "unstructured":
-            assert args.sparsity_ratio == 0.5, "sparsity ratio must be 0.5 for structured N:M sparsity"
-            prune_n, prune_m = map(int, args.sparsity_type.split(":"))
+            model_name = args.model.split("/")[-1]
+            print(f"loading llm model {args.model}")
 
-        model_name = args.model.split("/")[-1]
-        print(f"loading llm model {args.model}")
+            if args.sparsity_ratio != 0:
+                print("pruning starts")
+                if args.prune_method == "wanda":
+                    prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+                elif args.prune_method == "magnitude":
+                    prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+                elif args.prune_method == "sparsegpt":
+                    prune_sparsegpt(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+                elif "ablate" in args.prune_method:
+                    prune_ablate(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
 
-        if args.sparsity_ratio != 0:
-            print("pruning starts")
-            if args.prune_method == "wanda":
-                prune_wanda(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
-            elif args.prune_method == "magnitude":
-                prune_magnitude(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
-            elif args.prune_method == "sparsegpt":
-                prune_sparsegpt(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
-            elif "ablate" in args.prune_method:
-                prune_ablate(args, model, tokenizer, device, prune_n=prune_n, prune_m=prune_m)
+            ################################################################
+            print("*"*30)
+            sparsity_ratio = check_sparsity(model)
+            print(f"sparsity sanity check {sparsity_ratio:.4f}")
+            print("*"*30)
 
-        ################################################################
-        print("*"*30)
-        sparsity_ratio = check_sparsity(model)
-        print(f"sparsity sanity check {sparsity_ratio:.4f}")
-        print("*"*30)
-
-        #save first then eval
-        if args.save_model:
-            model.save_pretrained(args.save_model)
-            tokenizer.save_pretrained(args.save_model)
-        ################################################################
+            #save first then eval
+            if args.save_model:
+                model.save_pretrained(args.save_model)
+                tokenizer.save_pretrained(args.save_model)
+            ################################################################
     
-    #evaluation script 
+        #evaluation script 
 
-    evals = {}
+        evals = {}
 
-    ppl_test = eval_ppl(args, model, tokenizer, device)
-    evals["ppl"] = ppl_test
-    for dataset_name in ppl_test:
-        print("dataset: ", dataset_name, "ppl: ", ppl_test[dataset_name])
+        ppl_test = eval_ppl(args, model, tokenizer, device)
+        evals["ppl"] = ppl_test
+        for dataset_name in ppl_test:
+            print("dataset: ", dataset_name, "ppl: ", ppl_test[dataset_name])
 
     #save as a yaml
     if args.save:
