@@ -10,6 +10,9 @@ from importlib.metadata import version
 from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers
 from lib.eval import eval_ppl, zero_shot
 
+#print self pid
+print("pid: ", os.getpid())
+
 print('torch', version('torch'))
 print('transformers', version('transformers'))
 print('accelerate', version('accelerate'))

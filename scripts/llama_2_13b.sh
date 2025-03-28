@@ -3,7 +3,7 @@
 # Set common variables
 model="meta-llama/Llama-2-13b-hf"
 sparsity_ratio=0.5
-cuda_device=3,4,5
+cuda_device=6,7,8,9
 
 # Set CUDA device visibility
 export CUDA_VISIBLE_DEVICES=$cuda_device
@@ -25,14 +25,14 @@ run_python_command () {
 echo "Running with wanda pruning method"
 # run_python_command "wanda" "unstructured" "out/llama-2-13b/unstructured/wanda/" 
 # run_python_command "wanda" "2:4" "out/llama-2-13b/2-4/wanda/" 
-run_python_command "wanda" "4:8" "out/llama-2-13b/4-8/wanda/" #not run yet
+# run_python_command "wanda" "4:8" "out/llama-2-13b/4-8/wanda/" #not run yet
 # echo "Finished wanda pruning method"
 
 # llama-7b with sparsegpt pruning method
 # echo "Running with sparsegpt pruning method"
 # run_python_command "sparsegpt" "unstructured" "out/llama-2-13b/unstructured/sparsegpt/" 
 # run_python_command "sparsegpt" "2:4" "out/llama-2-13b/2-4/sparsegpt/" 
-# run_python_command "sparsegpt" "4:8" "out/llama-2-13b/4-8/sparsegpt/" 
+run_python_command "sparsegpt" "4:8" "out/llama-2-13b/4-8/sparsegpt/" 
 # echo "Finished sparsegpt pruning method"
 
 # # llama-7b with magnitude pruning method
