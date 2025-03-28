@@ -5,7 +5,6 @@ import torch.nn as nn
 import tqdm
 # Import get_loaders function from data module within the same directory
 from .data import get_loaders 
-
 from collections import defaultdict
 import fnmatch
 
@@ -82,37 +81,28 @@ def ppl_eval_single_dataset(model, testenc, bs=1, device=None):
     return ppl.item()
 
 
-def eval_zero_shot(model_name, model, tokenizer, task_list=["boolq","rte","hellaswag","winogrande","arc_challenge","arc_easy","openbookqa"], 
-        num_fewshot=0, use_accelerate=False, add_special_tokens=False):
-    from lm_eval import tasks, evaluator 
-    def pattern_match(patterns, source_list):
-        task_names = set()
-        for pattern in patterns:
-            for matching in fnmatch.filter(source_list, pattern):
-                task_names.add(matching)
-        return list(task_names)
-    task_names = pattern_match(task_list, tasks.ALL_TASKS)
-    model_args = f"pretrained={model_name},cache_dir=./llm_weights"
-    limit = None 
-    if "70b" in model_name or "65b" in model_name:
-        limit = 2000
-    if use_accelerate:
-        model_args = f"pretrained={model_name},cache_dir=./llm_weights,use_accelerate=True"
-    results = evaluator.simple_evaluate(
-        model="hf-causal-experimental",
-        model_args=model_args,
-        tasks=task_names,
-        num_fewshot=num_fewshot,
-        batch_size=None,
-        device=None,
-        no_cache=True,
-        limit=limit,
-        description_dict={},
-        decontamination_ngrams_path=None,
-        check_integrity=False,
-        pretrained_model=model,
-        tokenizer=tokenizer, 
-        add_special_tokens=add_special_tokens
-    )
+def zero_shot(base_model, model, 
+              batch_size = 1,
+              tasks:list[str] = ["winogrande", "piqa", "hellaswag", "arc_easy", "arc_challenge"],
+              num_fewshot:int = 0):
+    from transformers import AutoTokenizer
+    from .lm_eval_adaptor import LMEvalAdaptor
+    from lm_eval import evaluator, tasks
+    
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    tokenizer.pad_token = tokenizer.eos_token
 
-    return results 
+    lm_eval_model = LMEvalAdaptor(
+        base_model,
+        model, tokenizer, batch_size=batch_size)
+    
+    results = evaluator.simple_evaluate(
+        model = lm_eval_model,
+        tasks = tasks,
+        batch_size = batch_size,
+        no_cache = True,
+        num_fewshot = num_fewshot,
+    )
+    print(evaluator.make_table(results))
+    return results["results"]
+

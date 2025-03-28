@@ -8,7 +8,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from importlib.metadata import version
 
 from lib.prune import prune_wanda, prune_magnitude, prune_sparsegpt, prune_ablate, check_sparsity, find_layers
-from lib.eval import eval_ppl, eval_zero_shot
+from lib.eval import eval_ppl, zero_shot
 
 print('torch', version('torch'))
 print('transformers', version('transformers'))
@@ -116,23 +116,24 @@ def main():
 
     #zero shot eval
     if "None" not in args.eval_zero_shot_tasks:
-        accelerate=False
-        if "30b" in args.model or "65b" in args.model or "70b" in args.model:
-            accelerate=True
 
-        task_list = ["boolq", "rte","hellaswag","winogrande", "arc_easy","arc_challenge", "openbookqa"]
         num_shot = 0
-        results = eval_zero_shot(args.model, model, tokenizer, task_list, num_shot, accelerate)
+        results = zero_shot(args.model,
+                            model,
+                            batch_size=1,
+                            tasks = args.eval_zero_shot_tasks,
+                            num_fewshot=num_shot)
+                            
         
         #print the results
         print("results to add to a table:")
         avg_acc = 0
 
-        for task in task_list:
+        for task in args.eval_zero_shot_tasks:
             print(round(results[task]["acc"] * 100, 2), end=" & ")
             avg_acc += results[task]["acc"]
         print()
-        print("avg acc:", round(avg_acc / len(task_list) * 100, 2))
+        print("avg acc:", round(avg_acc / len(args.eval_zero_shot_tasks,) * 100, 2))
 
         #save the results
         if args.save:
