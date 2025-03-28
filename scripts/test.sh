@@ -3,7 +3,7 @@
 # Set common variables
 model="meta-llama/Llama-2-7b-hf"
 sparsity_ratio=0.5
-cuda_device=6
+cuda_device=0,1
 
 # Set CUDA device visibility
 export CUDA_VISIBLE_DEVICES=$cuda_device
@@ -11,7 +11,7 @@ export CUDA_VISIBLE_DEVICES=$cuda_device
 # Define function to run python command
 run_python_command () {
     mkdir -p $3 && \
-    python main.py \
+    python -u main.py \
     --model $model \
     --prune_method $1 \
     --sparsity_ratio $sparsity_ratio \

@@ -1,0 +1,6 @@
+Running with wanda pruning method
+Terminated
+./scripts/llama_2_70b.sh: line 43: unexpected EOF while looking for matching `"'
+./scripts/llama_2_70b.sh: line 44: syntax error: unexpected end of file
+Running with wanda pruning method
+Terminated
