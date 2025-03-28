@@ -110,8 +110,9 @@ def main():
 
     #save as a yaml
     if args.save:
-        os.makedirs(os.path.dirname(args.save), exist_ok=True)
-        with open(args.save, "w") as f:
+        os.makedirs(args.save, exist_ok=True)
+        with open(os.path.join(args.save, "evals.yaml")
+                  , "w") as f:
             yaml.dump(evals, f)
 
     #zero shot eval
@@ -140,7 +141,10 @@ def main():
             evals["zero_shot"] = results
             
             #overwrite the yaml file
-            with open(args.save, "w") as f:
+            
+            with open(
+                os.path.join(args.save, "evals.yaml")
+                , "w") as f:
                 yaml.dump(evals, f)
             
     
