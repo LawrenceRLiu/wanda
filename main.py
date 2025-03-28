@@ -42,7 +42,7 @@ def main():
     parser.add_argument('--save', type=str, default=None, help='Path to save results.')
     parser.add_argument('--save_model', type=str, default=None, help='Path to save the pruned model.')
     parser.add_argument("--eval_zero_shot_tasks", nargs="+", 
-                        default=["boolq","rte","hellaswag","winogrande", "arc_easy", "arc_challenge","openbookqa"],
+                        default=["winogrande", "rte", "piqa", "arc_easy", "arc_challenge"],
                         help="The zero shot tasks to evaluate on, if None then no zero shot evaluation will be performed.")
     parser.add_argument('--ppl_datasets', type=str, nargs="+",
                         choices=["wikitext2", "c4", "ptb"],
